@@ -8,12 +8,17 @@ ORANGE='\033[0;33m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
+# Section above is resbonsible for colors in colored output
+
+
 function isRoot() {
 	if [ "${EUID}" -ne 0 ]; then
 		echo "You need to run this script as root"
 		exit 1
 	fi
 }
+
+
 
 function checkVirt() {
 	if [ "$(systemd-detect-virt)" == "openvz" ]; then
@@ -31,11 +36,13 @@ function checkVirt() {
 	fi
 }
 
+
+
 function checkOS() {
 	source /etc/os-release
 	OS="${ID}"
 	if [[ ${OS} == "debian" || ${OS} == "raspbian" ]]; then
-		if [[ ${VERSION_ID} -lt 10 ]]; then
+		if [[ ${VERSION_ID} -lt 10 ]]; then # this line may be the reason that you cannot use this script on debian trixie and higher
 			echo "Your version of Debian (${VERSION_ID}) is not supported. Please use Debian 10 Buster or later"
 			exit 1
 		fi
@@ -66,6 +73,11 @@ function checkOS() {
 		exit 1
 	fi
 }
+
+# Function above is checking for specific version
+# Found a bug that this script doesn't work on Sid/Trixie (Debian); might fix it
+
+
 
 function getHomeDirForClient() {
 	local CLIENT_NAME=$1
@@ -101,6 +113,11 @@ function initialCheck() {
 	checkOS
 }
 
+# Line above check that script is executed with root priveledge, this is not LXC container and this is a compatable OS
+#
+#
+# Another variables:
+
 function installQuestions() {
 	echo "Welcome to the WireGuard installer!"
 	echo "The git repository is available at: https://github.com/angristan/wireguard-install"
@@ -109,6 +126,10 @@ function installQuestions() {
 	echo "You can keep the default options and just press enter if you are ok with them."
 	echo ""
 
+#		==================
+#		==================
+
+
 	# Detect public IPv4 or IPv6 address and pre-fill for the user
 	SERVER_PUB_IP=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | awk '{print $1}' | head -1)
 	if [[ -z ${SERVER_PUB_IP} ]]; then
@@ -116,6 +137,9 @@ function installQuestions() {
 		SERVER_PUB_IP=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 	fi
 	read -rp "IPv4 or IPv6 public address: " -e -i "${SERVER_PUB_IP}" SERVER_PUB_IP
+
+#		==================
+#		==================
 
 	# Detect public interface and pre-fill for the user
 	SERVER_NIC="$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)"
@@ -135,22 +159,32 @@ function installQuestions() {
 		read -rp "Server WireGuard IPv6: " -e -i fd42:42:42::1 SERVER_WG_IPV6
 	done
 
+#		==================
+#		==================
+
 	# Generate random number within private ports range
 	RANDOM_PORT=$(shuf -i49152-65535 -n1)
 	until [[ ${SERVER_PORT} =~ ^[0-9]+$ ]] && [ "${SERVER_PORT}" -ge 1 ] && [ "${SERVER_PORT}" -le 65535 ]; do
 		read -rp "Server WireGuard port [1-65535]: " -e -i "${RANDOM_PORT}" SERVER_PORT
 	done
 
-	# Adguard DNS by default
+#		==================
+#		==================
+
+	# Cloudflare DNS by default
 	until [[ ${CLIENT_DNS_1} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
-		read -rp "First DNS resolver to use for the clients: " -e -i 1.1.1.1 CLIENT_DNS_1
+		read -rp "First DNS resolver to use for the clients: " -e -i 1.1.1.1 CLIENT_DNS_1 # I offer to change this to AdGuard or WanGuard DNS
 	done
 	until [[ ${CLIENT_DNS_2} =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; do
-		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 1.0.0.1 CLIENT_DNS_2
+		read -rp "Second DNS resolver to use for the clients (optional): " -e -i 1.0.0.1 CLIENT_DNS_2 # I offer to change this to AdGuard or WanGuard DNS
 		if [[ ${CLIENT_DNS_2} == "" ]]; then
 			CLIENT_DNS_2="${CLIENT_DNS_1}"
 		fi
 	done
+
+#		==================
+#		# Network config #
+#		==================
 
 	until [[ ${ALLOWED_IPS} =~ ^.+$ ]]; do
 		echo -e "\nWireGuard uses a parameter called AllowedIPs to determine what is routed over the VPN."
@@ -165,6 +199,13 @@ function installQuestions() {
 	echo "You will be able to generate a client at the end of the installation."
 	read -n1 -r -p "Press any key to continue..."
 }
+
+
+
+#		================================
+#		# Function below starts installation #
+#		===============================
+
 
 function installWireGuard() {
 	# Run setup questions first
@@ -227,11 +268,17 @@ CLIENT_DNS_1=${CLIENT_DNS_1}
 CLIENT_DNS_2=${CLIENT_DNS_2}
 ALLOWED_IPS=${ALLOWED_IPS}" >/etc/wireguard/params
 
+
+
+
 	# Add server interface
 	echo "[Interface]
 Address = ${SERVER_WG_IPV4}/24,${SERVER_WG_IPV6}/64
 ListenPort = ${SERVER_PORT}
 PrivateKey = ${SERVER_PRIV_KEY}" >"/etc/wireguard/${SERVER_WG_NIC}.conf"
+
+
+
 
 	if pgrep firewalld; then
 		FIREWALLD_IPV4_ADDRESS=$(echo "${SERVER_WG_IPV4}" | cut -d"." -f1-3)".0"
